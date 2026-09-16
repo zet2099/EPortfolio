@@ -216,31 +216,40 @@
 
     const DataContext = createContext();
     const DataProvider = ({ children }) => {
-      const [user, setUser] = useState(null);
-      const [loading, setLoading] = useState(true);
-      const [siteData, setSiteData] = useState({
-        profile: {
-          name: 'Izzat Iman',
-          role: 'Tech-Driven Educator & Game Designer',
-          tagline: 'Pioneering AI-integrated learning, 3D content development, and educational game design.',
-          bio: 'Tech-driven educator blending teaching, game design, and programming to pioneer AI-integrated learning. Adaptable and passionate about helping students and educators unlock AI for creative and technical growth.',
-          location: 'Marang, Terengganu, Malaysia',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&q=80',
-          email: 'izzatiman1999@gmail.com',
-          phone: '+6018 9006874',
-          resumeUrl: '',
-          resumePreviewUrl: ''
-        },
-        socialLinks: {
-          linkedin: { enabled: false, url: '' },
-          email: { enabled: true, url: 'mailto:izzatiman1999@gmail.com' },
-          phone: { enabled: true, url: 'tel:+60189006874' }
-        },
-        projects: [],
-        skills: [],
-        experience: [],
-        education: []
-      });
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // 1. Initialize state from local cache if it exists, otherwise use hardcoded fallbacks
+  const [siteData, setSiteData] = useState(() => {
+    const savedCache = localStorage.getItem('portfolio_site_data');
+    if (savedCache) {
+      try { return JSON.parse(savedCache); } catch(e) {}
+    }
+    return {
+      profile: {
+        name: 'Izzat Iman',
+        role: 'Tech-Driven Educator & Game Designer',
+        tagline: 'Pioneering AI-integrated learning, 3D content development, and educational game design.',
+        bio: 'Tech-driven educator blending teaching, game design, and programming to pioneer AI-integrated learning.',
+        location: 'Marang, Terengganu, Malaysia',
+        avatar: 'https://res.cloudinary.com/xmpqoorj/image/upload/v1789542166/vyc7vlxfsgltxqbp5ptd.png',
+        email: 'izzatiman1999@gmail.com',
+        phone: '+6018 9006874',
+        resumeUrl: '',
+        resumePreviewUrl: ''
+      },
+      socialLinks: {
+        linkedin: { enabled: false, url: '' },
+        email: { enabled: true, url: 'mailto:izzatiman1999@gmail.com' },
+        phone: { enabled: true, url: 'tel:+60189006874' }
+      },
+      projects: [],
+      skills: [],
+      experience: [],
+      education: []
+    };
+  });
+
 
       useEffect(() => {
         const initAuth = async () => {
@@ -685,18 +694,20 @@
       useEffect(() => { setFormData(data); }, [data]);
 
       const handleSave = async () => {
-        setSaving(true);
-        try {
-          if (getDocRef('settings', 'profile')) {
-            await fb.setDoc(getDocRef('settings', 'profile'), formData, { merge: true });
-          }
-          addToast('Profile & Avatar saved successfully!');
-        } catch (error) {
-          addToast('Profile saved locally!');
-        }
-        setSiteData(prev => ({ ...prev, profile: formData }));
-        setSaving(false);
-      };
+  setSaving(true);
+  try {
+    if (db) {
+      const profileRef = getDocRef('settings', 'profile');
+      await fb.setDoc(profileRef, formData, { merge: true });
+    }
+    setSiteData(prev => ({ ...prev, profile: formData }));
+    addToast('Profile & Avatar saved to Firebase!');
+  } catch (error) {
+    console.error("Profile save error:", error);
+    addToast('Could not save to Firebase. Check console for details.', 'error');
+  }
+  setSaving(false);
+};
 
       return (
         <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 md:p-8 shadow-sm border border-zinc-200 dark:border-zinc-800">
@@ -921,36 +932,35 @@
         setIsModalOpen(true);
       };
 
-      const handleSave = async () => {
-        try {
-          let newItem = { ...editingItem };
-          if (!newItem.id) newItem.id = `${type.slice(0,3)}_${Date.now()}`;
+const handleSave = async () => {
+  try {
+    const isNew = !editingItem.id;
+    const docId = editingItem.id || `${type.slice(0,3)}_${Date.now()}`;
+    const itemToSave = { ...editingItem, id: docId };
 
-          try {
-            if (editingItem.id && getDocRef(type, editingItem.id)) {
-              await fb.setDoc(getDocRef(type, editingItem.id), editingItem, { merge: true });
-            } else if (getCollectionRef(type)) {
-              await fb.addDoc(getCollectionRef(type), editingItem);
-            }
-          } catch (err) {
-            console.warn("Saving to local state fallback...");
-          }
+    // Persist directly to Firestore document reference
+    if (db) {
+      const docRef = getDocRef(type, docId);
+      await fb.setDoc(docRef, itemToSave, { merge: true });
+    }
 
-          setSiteData(prev => {
-            const currentList = prev[type] || [];
-            const exists = currentList.some(i => i.id === newItem.id);
-            const updatedList = exists 
-              ? currentList.map(i => i.id === newItem.id ? newItem : i)
-              : [...currentList, newItem];
-            return { ...prev, [type]: updatedList };
-          });
+    // Update local React state
+    setSiteData(prev => {
+      const currentList = prev[type] || [];
+      const exists = currentList.some(i => i.id === docId);
+      const updatedList = exists 
+        ? currentList.map(i => i.id === docId ? itemToSave : i)
+        : [...currentList, itemToSave];
+      return { ...prev, [type]: updatedList };
+    });
 
-          addToast(`${type.slice(0,-1)} saved!`);
-          setIsModalOpen(false);
-        } catch (error) {
-          addToast('Error saving item', 'error');
-        }
-      };
+    addToast(`${type.slice(0,-1)} saved to Firebase!`);
+    setIsModalOpen(false);
+  } catch (error) {
+    console.error("Firebase save error:", error);
+    addToast(`Saved locally (Firebase error: ${error.message})`, 'error');
+  }
+};
 
       const handleDelete = async (id) => {
         try {
